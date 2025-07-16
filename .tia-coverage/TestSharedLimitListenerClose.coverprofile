@@ -1,0 +1,19 @@
+mode: set
+github.com/prometheus/prometheus/util/netconnlimit/netconnlimit.go:27.46,29.2 1 1
+github.com/prometheus/prometheus/util/netconnlimit/netconnlimit.go:33.74,39.2 1 1
+github.com/prometheus/prometheus/util/netconnlimit/netconnlimit.go:51.46,52.9 1 1
+github.com/prometheus/prometheus/util/netconnlimit/netconnlimit.go:53.16,54.15 1 1
+github.com/prometheus/prometheus/util/netconnlimit/netconnlimit.go:55.27,56.14 1 0
+github.com/prometheus/prometheus/util/netconnlimit/netconnlimit.go:60.41,60.52 1 0
+github.com/prometheus/prometheus/util/netconnlimit/netconnlimit.go:62.58,63.18 1 1
+github.com/prometheus/prometheus/util/netconnlimit/netconnlimit.go:63.18,64.7 1 1
+github.com/prometheus/prometheus/util/netconnlimit/netconnlimit.go:64.7,66.18 2 1
+github.com/prometheus/prometheus/util/netconnlimit/netconnlimit.go:66.18,68.5 1 1
+github.com/prometheus/prometheus/util/netconnlimit/netconnlimit.go:69.4,69.13 1 0
+github.com/prometheus/prometheus/util/netconnlimit/netconnlimit.go:73.2,74.16 2 0
+github.com/prometheus/prometheus/util/netconnlimit/netconnlimit.go:74.16,77.3 2 0
+github.com/prometheus/prometheus/util/netconnlimit/netconnlimit.go:78.2,78.67 1 0
+github.com/prometheus/prometheus/util/netconnlimit/netconnlimit.go:81.45,83.24 2 1
+github.com/prometheus/prometheus/util/netconnlimit/netconnlimit.go:83.24,83.41 1 1
+github.com/prometheus/prometheus/util/netconnlimit/netconnlimit.go:84.2,84.12 1 1
+github.com/prometheus/prometheus/util/netconnlimit/netconnlimit.go:93.49,97.2 3 0
