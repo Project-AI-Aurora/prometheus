@@ -2165,3 +2165,4 @@ func truncateResults(result *promql.Result, limit int) (*promql.Result, bool) {
 	// Return the modified result. Unchanged for other types.
 	return result, isTruncated
 }
+// TIA test change
