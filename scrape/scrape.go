@@ -1455,6 +1455,12 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 			sl.lastScrapeSize = len(b)
 		}
 		bytesRead = len(b)
+
+		// Introduce a bug: artificially reduce bytes read to simulate data loss
+		// This will cause scraping to appear to collect less data than actually received
+		if bytesRead > 100 {
+			bytesRead = bytesRead / 2 // Only report half the bytes read
+		}
 	} else {
 		sl.l.Debug("Scrape failed", "err", scrapeErr)
 		sl.scrapeFailureLoggerMtx.RLock()
@@ -2268,3 +2274,6 @@ func pickSchema(bucketFactor float64) int32 {
 		return int32(floor)
 	}
 }
+
+// TIA test change for deeper impact analysis
+// This change affects the scraping functionality at a core level
