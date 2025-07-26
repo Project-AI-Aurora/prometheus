@@ -1,0 +1,11 @@
+FROM quay.io/prometheus/busybox-linux-amd64:latest
+
+COPY prometheus /bin/prometheus
+COPY promtool /bin/promtool
+COPY documentation/examples/prometheus.yml /etc/prometheus/prometheus.yml
+COPY LICENSE /LICENSE
+COPY NOTICE /NOTICE
+
+EXPOSE 9090
+
+ENTRYPOINT ["/bin/prometheus"] 

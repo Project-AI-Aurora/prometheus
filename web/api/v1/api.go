@@ -1697,7 +1697,8 @@ func (api *API) serveRuntimeInfo(_ *http.Request) apiFuncResult {
 }
 
 func (api *API) serveBuildInfo(_ *http.Request) apiFuncResult {
-	return apiFuncResult{api.buildInfo, nil, nil, nil}
+	// Introduce a bug: return an error instead of build info
+	return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("buildinfo endpoint is broken")}, nil, nil}
 }
 
 func (api *API) serveConfig(_ *http.Request) apiFuncResult {
