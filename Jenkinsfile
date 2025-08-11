@@ -5,28 +5,38 @@ pipeline {
         GITHUB_TOKEN = credentials('github-token')
         DOCKER_IMAGE = 'prometheus:latest'
         TEST_DIR = 'prometheus-integration-tests'
+        // Use environment variables for repository configuration
+        REPO_URL = env.GIT_URL ?: 'https://github.com/prometheus/prometheus.git'
+        REPO_NAME = env.GIT_URL ? env.GIT_URL.replaceAll('.*github\\.com[:/]([^/]+/[^/]+?)(\\.git)?$', '$1') : 'prometheus/prometheus'
     }
     
     stages {
         stage('Checkout') {
             steps {
                 script {
-                    // Checkout the PR branch
-                    checkout([
-                        $class: 'GitSCM',
-                        branches: [[name: '${GITHUB_REF}']],
-                        doGenerateSubmoduleConfigurations: false,
-                        extensions: [
-                            [$class: 'SubmoduleOption', disableSubmodules: false, recursiveSubmodules: true, trackingSubmodules: false],
-                            [$class: 'CleanBeforeCheckout'],
-                            [$class: 'CleanCheckout']
-                        ],
-                        submoduleCfg: [],
-                        userRemoteConfigs: [[
-                            url: 'https://github.com/Project-AI-Aurora/prometheus.git',
-                            refspec: '+refs/pull/${CHANGE_ID}/head:refs/remotes/origin/pr/${CHANGE_ID}'
-                        ]]
-                    ])
+                    // Since we're running from within the prometheus repo, 
+                    // we can use a simpler checkout approach
+                    if (env.CHANGE_ID) {
+                        // This is a PR build
+                        checkout([
+                            $class: 'GitSCM',
+                            branches: [[name: '${GITHUB_REF}']],
+                            doGenerateSubmoduleConfigurations: false,
+                            extensions: [
+                                [$class: 'SubmoduleOption', disableSubmodules: false, recursiveSubmodules: true, trackingSubmodules: false],
+                                [$class: 'CleanBeforeCheckout'],
+                                [$class: 'CleanCheckout']
+                            ],
+                            submoduleCfg: [],
+                            userRemoteConfigs: [[
+                                url: env.REPO_URL,
+                                refspec: "+refs/pull/${CHANGE_ID}/head:refs/remotes/origin/pr/${CHANGE_ID}"
+                            ]]
+                        ])
+                    } else {
+                        // This is a branch build, use standard checkout
+                        checkout scm
+                    }
                 }
             }
         }
@@ -62,18 +72,16 @@ pipeline {
         stage('Build Prometheus') {
             steps {
                 script {
-                    dir('prometheus') {
-                        sh '''
-                            # Build Prometheus Docker image
-                            echo "Building Prometheus Docker image..."
-                            docker build -t ${DOCKER_IMAGE} .
-                            
-                            if [ $? -ne 0 ]; then
-                                echo "Failed to build Prometheus image"
-                                exit 1
-                            fi
-                        '''
-                    }
+                    sh '''
+                        # Build Prometheus Docker image
+                        echo "Building Prometheus Docker image..."
+                        docker build -t ${DOCKER_IMAGE} .
+                        
+                        if [ $? -ne 0 ]; then
+                            echo "Failed to build Prometheus image"
+                            exit 1
+                        fi
+                    '''
                 }
             }
         }
@@ -160,8 +168,10 @@ pipeline {
                     docker images -q ${DOCKER_IMAGE} | xargs -r docker rmi || true
                 '''
                 
-                // Post results to GitHub PR
-                postResultsToGitHub()
+                // Post results to GitHub PR if this is a PR build
+                if (env.CHANGE_ID) {
+                    postResultsToGitHub()
+                }
             }
         }
         success {
@@ -235,7 +245,7 @@ def postResultsToGitHub() {
     script {
         if (env.PR_COMMENT) {
             def prNumber = env.CHANGE_ID
-            def repo = "prometheus/prometheus"
+            def repo = env.REPO_NAME
             
             // Post comment to GitHub PR
             sh """
