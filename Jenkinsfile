@@ -46,12 +46,18 @@ pipeline {
                     sh '''
                         # Check if Go is actually available and working
                         GO_AVAILABLE=false
+                        
+                        # More robust Go detection
                         if command -v go &> /dev/null; then
-                            if go version &> /dev/null; then
+                            # Check if it's actually executable and working
+                            if which go &> /dev/null && [ -x "$(which go)" ] && go version &> /dev/null 2>&1; then
                                 GO_AVAILABLE=true
                                 echo "Go is already available: $(go version)"
                             else
                                 echo "Go command exists but doesn't work, will reinstall"
+                                # Remove broken Go installation
+                                sudo rm -rf /usr/local/go
+                                sudo rm -f /usr/bin/go
                             fi
                         fi
                         
@@ -60,6 +66,10 @@ pipeline {
                             # Use a recent Go version with fallback URLs
                             GO_VERSION="1.21.15"
                             GO_ARCH="linux-amd64"
+                            
+                            # Clean up any existing broken installations
+                            sudo rm -rf /usr/local/go
+                            sudo rm -f /usr/bin/go
                             
                             # Try multiple download URLs
                             if wget -q "https://go.dev/dl/go${GO_VERSION}.${GO_ARCH}.tar.gz"; then
@@ -74,7 +84,11 @@ pipeline {
                                 }
                             fi
                             
+                            # Install Go
                             sudo tar -C /usr/local -xzf "go${GO_VERSION}.${GO_ARCH}.tar.gz"
+                            
+                            # Create symlink for easier access
+                            sudo ln -sf /usr/local/go/bin/go /usr/bin/go
                             
                             # Clean up downloaded archive
                             rm -f "go${GO_VERSION}.${GO_ARCH}.tar.gz"
@@ -83,14 +97,17 @@ pipeline {
                         fi
                         
                         # Always ensure Go is in PATH and verify it works
-                        export PATH=$PATH:/usr/local/go/bin
+                        export PATH=/usr/local/go/bin:$PATH
                         echo "Updated PATH: $PATH"
                         
                         # Verify Go is working
                         if /usr/local/go/bin/go version; then
                             echo "Go verification successful: $(/usr/local/go/bin/go version)"
                         else
-                            echo "Go verification failed"
+                            echo "Go verification failed - checking what went wrong:"
+                            ls -la /usr/local/go/bin/
+                            echo "Trying to find go binary:"
+                            find /usr/local -name "go" -type f 2>/dev/null || echo "No go binary found"
                             exit 1
                         fi
                         
