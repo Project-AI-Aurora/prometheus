@@ -49,28 +49,29 @@ pipeline {
                         
                         # Check if Go is already available and working
                         echo "Checking Go availability..."
-                        echo "command -v go result: $(command -v go 2>/dev/null || echo 'not found')"
                         
                         # Try to find any working Go installation
                         GO_AVAILABLE=false
                         
                         # Check system PATH first
-                        if command -v go &> /dev/null; then
+                        if command -v go >/dev/null 2>&1; then
                             echo "Go command found in PATH, testing if it works..."
-                            if go version &> /dev/null 2>&1; then
+                            if go version >/dev/null 2>&1; then
                                 echo "Go is already available: $(go version)"
                                 GO_AVAILABLE=true
                             else
                                 echo "Go command exists but doesn't work, will try to install..."
                                 GO_AVAILABLE=false
                             fi
+                        else
+                            echo "Go command not found in PATH"
                         fi
                         
                         # Check common Go installation locations
                         if [ "$GO_AVAILABLE" = false ]; then
                             echo "Checking common Go installation locations..."
                             for go_path in "/usr/local/go/bin/go" "/usr/bin/go" "/opt/go/bin/go"; do
-                                if [ -x "$go_path" ] && "$go_path" version &> /dev/null 2>&1; then
+                                if [ -x "$go_path" ] && "$go_path" version >/dev/null 2>&1; then
                                     echo "Found working Go at: $go_path"
                                     export PATH="$(dirname $go_path):$PATH"
                                     GO_AVAILABLE=true
@@ -81,6 +82,7 @@ pipeline {
                         
                         echo "GO_AVAILABLE set to: $GO_AVAILABLE"
                         
+                        echo "About to check if Go installation is needed..."
                         if [ "$GO_AVAILABLE" = false ]; then
                             echo "Installing Go..."
                             
@@ -125,6 +127,15 @@ pipeline {
                             echo "Verifying new Go installation..."
                             ls -la /usr/local/go/bin/ || echo "Go bin directory not found"
                             ls -la /usr/bin/go || echo "Go symlink not found"
+                            
+                            # Test the newly installed Go
+                            echo "Testing newly installed Go..."
+                            if /usr/local/go/bin/go version; then
+                                echo "New Go installation works!"
+                                GO_AVAILABLE=true
+                            else
+                                echo "New Go installation failed verification"
+                            fi
                         fi
                         
                         # Set up Go environment
@@ -152,10 +163,20 @@ pipeline {
                         fi
                         
                         # Create Go workspace
-                        sudo mkdir -p /var/lib/jenkins/go
-                        sudo chown jenkins:jenkins /var/lib/jenkins/go
+                        sudo mkdir -p /var/lib/jenkins/go || echo "Failed to create Go workspace directory, continuing..."
+                        sudo chown jenkins:jenkins /var/lib/jenkins/go || echo "Failed to change ownership, continuing..."
                         
                         echo "Go environment setup complete"
+                        
+                        # Final verification of what we have
+                        echo "=== Final Go Environment Check ==="
+                        echo "PATH: $PATH"
+                        echo "GOROOT: $GOROOT"
+                        echo "GOPATH: $GOPATH"
+                        echo "which go: $(which go 2>/dev/null || echo 'not found')"
+                        echo "ls /usr/local/go/bin: $(ls /usr/local/go/bin 2>/dev/null || echo 'directory not found')"
+                        echo "ls /usr/bin/go: $(ls -la /usr/bin/go 2>/dev/null || echo 'symlink not found')"
+                        echo "=================================="
                         
                         # Install Docker if not present
                         if ! command -v docker &> /dev/null; then
