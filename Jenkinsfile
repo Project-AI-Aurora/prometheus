@@ -6,6 +6,7 @@ pipeline {
         DOCKER_IMAGE = 'prometheus:latest'
         DOCKER_REGISTRY = 'localhost:5000'
         TEST_DIR = 'prometheus-integration-tests'
+        GO_VERSION = '1.21.15'
     }
     
     stages {
@@ -43,217 +44,65 @@ pipeline {
         stage('Setup Environment') {
             steps {
                 script {
-                    // Install Go if not present
                     sh '''
-                        echo "Starting environment setup..."
-                        echo "=== Jenkins Environment Check ==="
-                        echo "Current user: $(whoami)"
-                        echo "Jenkins user: jenkins"
-                        echo "Can run sudo: $(sudo -n true 2>/dev/null && echo 'YES' || echo 'NO')"
-                        echo "Current working directory: $(pwd)"
-                        echo "=================================="
+                        echo "Setting up environment..."
                         
-                        # Check if Go is already available and working
-                        echo "Checking Go availability..."
-                        
-                        # Try to find any working Go installation
-                        GO_AVAILABLE=false
-                        
-                        # Check system PATH first
-                        if command -v go >/dev/null 2>&1; then
-                            echo "Go command found in PATH, testing if it works..."
-                            if go version >/dev/null 2>&1; then
-                                echo "Go is already available: $(go version)"
-                                GO_AVAILABLE=true
+                        # Install Go if not present
+                        if ! command -v go >/dev/null 2>&1; then
+                            echo "Installing Go ${GO_VERSION}..."
+                            
+                            # Clean up any existing broken installations
+                            sudo rm -rf /usr/local/go || true
+                            
+                            # Download and install Go
+                            cd /tmp
+                            wget -q "https://golang.org/dl/go${GO_VERSION}.linux-amd64.tar.gz"
+                            
+                            if [ -f "go${GO_VERSION}.linux-amd64.tar.gz" ]; then
+                                sudo tar -C /usr/local -xzf "go${GO_VERSION}.linux-amd64.tar.gz"
+                                sudo ln -sf /usr/local/go/bin/go /usr/bin/go
+                                rm -f "go${GO_VERSION}.linux-amd64.tar.gz"
+                                echo "Go installation completed"
                             else
-                                echo "Go command exists but doesn't work, will try to install..."
-                                GO_AVAILABLE=false
+                                echo "ERROR: Failed to download Go"
+                                exit 1
                             fi
                         else
-                            echo "Go command not found in PATH"
-                        fi
-                        
-                        # Check common Go installation locations
-                        if [ "$GO_AVAILABLE" = false ]; then
-                            echo "Checking common Go installation locations..."
-                            for go_path in "/usr/local/go/bin/go" "/usr/bin/go" "/opt/go/bin/go"; do
-                                if [ -x "$go_path" ] && "$go_path" version >/dev/null 2>&1; then
-                                    echo "Found working Go at: $go_path"
-                                    export PATH="$(dirname $go_path):$PATH"
-                                    GO_AVAILABLE=true
-                                    break
-                                fi
-                            done
-                        fi
-                        
-                        echo "GO_AVAILABLE set to: $GO_AVAILABLE"
-                        
-                        echo "About to check if Go installation is needed..."
-                        if [ "$GO_AVAILABLE" = false ]; then
-                            echo "Installing Go..."
-                            
-                            # Try system package manager first (might not require sudo password)
-                            echo "Trying system package manager for Go..."
-                            if command -v apt-get >/dev/null 2>&1; then
-                                echo "Found apt-get, trying to install Go..."
-                                if sudo apt-get update -qq && sudo apt-get install -y golang-go; then
-                                    echo "Go installed via apt-get successfully!"
-                                    GO_AVAILABLE=true
-                                else
-                                    echo "apt-get installation failed, trying manual installation..."
-                                fi
-                            elif command -v yum >/dev/null 2>&1; then
-                                echo "Found yum, trying to install Go..."
-                                if sudo yum install -y golang; then
-                                    echo "Go installed via yum successfully!"
-                                    GO_AVAILABLE=true
-                                else
-                                    echo "yum installation failed, trying manual installation..."
-                                fi
-                            fi
-                            
-                            # If system package manager failed, try manual installation
-                            if [ "$GO_AVAILABLE" = false ]; then
-                                echo "Proceeding with manual Go installation..."
-                                
-                                # Try to clean up any existing broken installations (non-fatal)
-                                echo "Cleaning up existing Go installations..."
-                                sudo rm -rf /usr/local/go || echo "Failed to remove /usr/local/go, continuing..."
-                                sudo rm -f /usr/bin/go || echo "Failed to remove /usr/bin/go, continuing..."
-                            
-                            # Use a stable Go version
-                            GO_VERSION="1.21.15"
-                            GO_ARCH="linux-amd64"
-                            
-                            # Download Go with fallback URLs
-                            echo "Downloading Go ${GO_VERSION}..."
-                            if wget -q "https://go.dev/dl/go${GO_VERSION}.${GO_ARCH}.tar.gz"; then
-                                echo "Downloaded from go.dev"
-                            elif wget -q "https://golang.org/dl/go${GO_VERSION}.${GO_ARCH}.tar.gz"; then
-                                echo "Downloaded from golang.org"
-                            else
-                                echo "Failed to download Go from primary sources"
-                                echo "WARNING: Go installation failed, but continuing..."
-                                echo "This will cause issues in later stages"
-                                return 0
-                            fi
-                            
-                            # Install Go
-                            echo "Installing Go to /usr/local..."
-                            if sudo tar -C /usr/local -xzf "go${GO_VERSION}.${GO_ARCH}.tar.gz"; then
-                                echo "Go extraction successful"
-                            else
-                                echo "Go extraction failed"
-                                echo "WARNING: Go installation failed, but continuing..."
-                                return 0
-                            fi
-                            
-                            # Verify installation
-                            if [ ! -d "/usr/local/go/bin" ]; then
-                                echo "Error: Go installation directory not found"
-                                echo "WARNING: Go installation failed, but continuing..."
-                                return 0
-                            fi
-                            
-                            # Create symlink
-                            sudo ln -sf /usr/local/go/bin/go /usr/bin/go || echo "Failed to create symlink, continuing..."
-                            
-                            # Clean up
-                            rm -f "go${GO_VERSION}.${GO_ARCH}.tar.gz" || echo "Failed to clean up download, continuing..."
-                            
-                            echo "Go installation completed"
-                            
-                            # Verify the new installation
-                            echo "Verifying new Go installation..."
-                            ls -la /usr/local/go/bin/ || echo "Go bin directory not found"
-                            ls -la /usr/bin/go || echo "Go symlink not found"
-                            
-                            # Test the newly installed Go
-                            echo "Testing newly installed Go..."
-                            if /usr/local/go/bin/go version; then
-                                echo "New Go installation works!"
-                                GO_AVAILABLE=true
-                            else
-                                echo "New Go installation failed verification"
-                            fi
-                            fi
+                            echo "Go is already available: $(go version)"
                         fi
                         
                         # Set up Go environment
-                        echo "Setting up Go environment..."
                         export PATH=/usr/local/go/bin:$PATH
                         export GOROOT=/usr/local/go
                         export GOPATH=/var/lib/jenkins/go
                         
-                        echo "New PATH: $PATH"
-                        echo "New GOROOT: $GOROOT"
-                        echo "New GOPATH: $GOPATH"
+                        # Create Go workspace
+                        sudo mkdir -p /var/lib/jenkins/go
+                        sudo chown jenkins:jenkins /var/lib/jenkins/go
                         
-                        # Verify Go works
-                        echo "Testing Go command..."
-                        if go version; then
-                            echo "Go verification successful: $(go version)"
-                        else
-                            echo "Go verification failed"
-                            echo "Trying to find Go binary..."
-                            which go || echo "which go failed"
-                            ls -la /usr/local/go/bin/go || echo "Go binary not found"
-                            echo "Current PATH: $PATH"
-                            echo "WARNING: Go verification failed, but continuing..."
-                            echo "This may cause issues in later stages"
+                        # Verify Go installation
+                        if ! go version; then
+                            echo "ERROR: Go verification failed"
+                            exit 1
                         fi
                         
-                        # Create Go workspace
-                        sudo mkdir -p /var/lib/jenkins/go || echo "Failed to create Go workspace directory, continuing..."
-                        sudo chown jenkins:jenkins /var/lib/jenkins/go || echo "Failed to change ownership, continuing..."
-                        
-                        echo "Go environment setup complete"
-                        
-                        # Final verification of what we have
-                        echo "=== Final Go Environment Check ==="
-                        echo "PATH: $PATH"
-                        echo "GOROOT: $GOROOT"
-                        echo "GOPATH: $GOPATH"
-                        echo "which go: $(which go 2>/dev/null || echo 'not found')"
-                        echo "ls /usr/local/go/bin: $(ls /usr/local/go/bin 2>/dev/null || echo 'directory not found')"
-                        echo "ls /usr/bin/go: $(ls -la /usr/bin/go 2>/dev/null || echo 'symlink not found')"
-                        echo "=================================="
-                        
                         # Install Docker if not present
-                        if ! command -v docker &> /dev/null; then
+                        if ! command -v docker >/dev/null 2>&1; then
                             echo "Installing Docker..."
-                            curl -fsSL https://get.docker.com -o get-docker.sh
+                            curl -fsSL https://get-docker.com -o get-docker.sh
                             sudo sh get-docker.sh
                             sudo usermod -aG docker jenkins
                         fi
                         
                         # Start Docker service
-                        sudo systemctl start docker || echo "Docker start failed, continuing..."
-                        sudo systemctl enable docker || echo "Docker enable failed, continuing..."
+                        sudo systemctl start docker || true
+                        sudo systemctl enable docker || true
                         
                         # Ensure Jenkins user has Docker access
-                        sudo usermod -aG docker jenkins || echo "Failed to add jenkins to docker group, continuing..."
+                        sudo usermod -aG docker jenkins || true
                         sudo chmod 666 /var/run/docker.sock || true
                         
-                        # Test Docker access
-                        if docker --version &> /dev/null; then
-                            echo "Docker is accessible"
-                        else
-                            echo "Warning: Docker may not be accessible to Jenkins user"
-                        fi
-                        
-                        echo "Environment setup completed successfully"
-                        
-                        # Debug: Show what we have
-                        echo "=== Environment Debug Info ==="
-                        echo "PATH: $PATH"
-                        echo "GOROOT: $GOROOT"
-                        echo "GOPATH: $GOPATH"
-                        echo "Go version: $(go version 2>/dev/null || echo 'Go not in PATH')"
-                        echo "Docker version: $(docker --version 2>/dev/null || echo 'Docker not accessible')"
-                        echo "Current user: $(whoami)"
-                        echo "Jenkins user: jenkins"
-                        echo "================================"
+                        echo "Environment setup completed"
                     '''
                 }
             }
@@ -263,11 +112,9 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        echo "Testing basic command execution..."
-                        echo "Current directory: $(pwd)"
-                        echo "Current user: $(whoami)"
-                        echo "Go version: $(go version 2>/dev/null || echo 'Go not available')"
-                        echo "Docker version: $(docker --version 2>/dev/null || echo 'Docker not available')"
+                        echo "Testing basic commands..."
+                        echo "Go version: $(go version)"
+                        echo "Docker version: $(docker --version)"
                         echo "Basic commands test completed"
                     '''
                 }
