@@ -6,9 +6,6 @@ pipeline {
         DOCKER_IMAGE = 'prometheus:latest'
         DOCKER_REGISTRY = 'localhost:5000'
         TEST_DIR = 'prometheus-integration-tests'
-        // Docker Hub credentials (optional - only needed if PUSH_TO_DOCKERHUB=true)
-        DOCKERHUB_USERNAME = credentials('dockerhub-username')
-        DOCKERHUB_PASSWORD = credentials('dockerhub-password')
     }
     
     stages {
@@ -43,7 +40,7 @@ pipeline {
             }
         }
         
-                stage('Setup Environment') {
+        stage('Setup Environment') {
             steps {
                 script {
                     // Install Go if not present
@@ -331,6 +328,8 @@ pipeline {
             }
         }
         
+        // This stage only runs when PUSH_TO_DOCKERHUB=true
+        // To enable: Add dockerhub-username and dockerhub-password credentials to Jenkins
         stage('Push to Docker Hub (Optional)') {
             when {
                 environment name: 'PUSH_TO_DOCKERHUB', value: 'true'
@@ -338,9 +337,18 @@ pipeline {
             steps {
                 script {
                     sh '''
+                        echo "Checking Docker Hub credentials..."
+                        
+                        # Check if Docker Hub credentials are available
+                        if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_PASSWORD" ]; then
+                            echo "Docker Hub credentials not available, skipping push"
+                            echo "To enable Docker Hub push, add credentials to Jenkins and set PUSH_TO_DOCKERHUB=true"
+                            exit 0
+                        fi
+                        
                         echo "Pushing image to Docker Hub..."
                         
-                        # Login to Docker Hub (requires credentials)
+                        # Login to Docker Hub
                         echo $DOCKERHUB_PASSWORD | docker login -u $DOCKERHUB_USERNAME --password-stdin
                         
                         # Tag for Docker Hub
@@ -357,6 +365,20 @@ pipeline {
                             exit 1
                         fi
                     '''
+                }
+            }
+        }
+        
+        // Show status when Docker Hub is not enabled
+        stage('Docker Hub Status') {
+            when {
+                not { environment name: 'PUSH_TO_DOCKERHUB', value: 'true' }
+            }
+            steps {
+                script {
+                    echo "Docker Hub push is disabled"
+                    echo "To enable: Set PUSH_TO_DOCKERHUB=true and add Docker Hub credentials to Jenkins"
+                    echo "Current setup: Using local Docker registry at ${DOCKER_REGISTRY}"
                 }
             }
         }
