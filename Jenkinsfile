@@ -44,14 +44,43 @@ pipeline {
                 script {
                     // Install Go if not present
                     sh '''
-                        if ! command -v go &> /dev/null; then
+                        # Check if Go is available in PATH
+                        if command -v go &> /dev/null; then
+                            echo "Go is already available: $(go version)"
+                        else
                             echo "Installing Go..."
-                            wget https://golang.org/dl/go1.21.linux-amd64.tar.gz
-                            sudo tar -C /usr/local -xzf go1.21.linux-amd64.tar.gz
+                            # Use a recent Go version with fallback URLs
+                            GO_VERSION="1.21.15"
+                            GO_ARCH="linux-amd64"
+                            
+                            # Try multiple download URLs
+                            if wget -q "https://go.dev/dl/go${GO_VERSION}.${GO_ARCH}.tar.gz"; then
+                                echo "Downloaded from go.dev"
+                            elif wget -q "https://golang.org/dl/go${GO_VERSION}.${GO_ARCH}.tar.gz"; then
+                                echo "Downloaded from golang.org"
+                            else
+                                echo "Failed to download Go from primary sources, trying archive"
+                                wget -q "https://archive.org/download/golang-archive/go${GO_VERSION}.${GO_ARCH}.tar.gz" || {
+                                    echo "Failed to download Go from all sources"
+                                    exit 1
+                                }
+                            fi
+                            
+                            sudo tar -C /usr/local -xzf "go${GO_VERSION}.${GO_ARCH}.tar.gz"
                             export PATH=$PATH:/usr/local/go/bin
-                        fi
-                        
-                        # Install Docker if not present
+                            # Verify installation
+                            /usr/local/go/bin/go version
+                            echo "Go installation completed successfully"
+                            
+                                                    # Clean up downloaded archive
+                        rm -f "go${GO_VERSION}.${GO_ARCH}.tar.gz"
+                    fi
+                    
+                    # Ensure Go is in PATH for this session
+                    export PATH=$PATH:/usr/local/go/bin
+                    echo "Current Go version: $(go version)"
+                    
+                    # Install Docker if not present
                         if ! command -v docker &> /dev/null; then
                             echo "Installing Docker..."
                             curl -fsSL https://get.docker.com -o get-docker.sh
