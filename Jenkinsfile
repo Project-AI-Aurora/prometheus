@@ -5,9 +5,6 @@ pipeline {
         GITHUB_TOKEN = credentials('github-token')
         DOCKER_IMAGE = 'prometheus:latest'
         TEST_DIR = 'prometheus-integration-tests'
-        // Use environment variables for repository configuration
-        REPO_URL = env.GIT_URL ?: 'https://github.com/prometheus/prometheus.git'
-        REPO_NAME = env.GIT_URL ? env.GIT_URL.replaceAll('.*github\\.com[:/]([^/]+/[^/]+?)(\\.git)?$', '$1') : 'prometheus/prometheus'
     }
     
     stages {
@@ -18,6 +15,7 @@ pipeline {
                     // we can use a simpler checkout approach
                     if (env.CHANGE_ID) {
                         // This is a PR build
+                        def repoUrl = env.GIT_URL ?: 'https://github.com/prometheus/prometheus.git'
                         checkout([
                             $class: 'GitSCM',
                             branches: [[name: '${GITHUB_REF}']],
@@ -29,7 +27,7 @@ pipeline {
                             ],
                             submoduleCfg: [],
                             userRemoteConfigs: [[
-                                url: env.REPO_URL,
+                                url: repoUrl,
                                 refspec: "+refs/pull/${CHANGE_ID}/head:refs/remotes/origin/pr/${CHANGE_ID}"
                             ]]
                         ])
@@ -245,7 +243,8 @@ def postResultsToGitHub() {
     script {
         if (env.PR_COMMENT) {
             def prNumber = env.CHANGE_ID
-            def repo = env.REPO_NAME
+            // Calculate repository name from GIT_URL
+            def repo = env.GIT_URL ? env.GIT_URL.replaceAll('.*github\\.com[:/]([^/]+/[^/]+?)(\\.git)?$', '$1') : 'prometheus/prometheus'
             
             // Post comment to GitHub PR
             sh """
