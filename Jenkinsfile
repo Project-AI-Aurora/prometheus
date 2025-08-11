@@ -108,6 +108,52 @@ pipeline {
             }
         }
         
+        stage('Build Prometheus Binaries') {
+            steps {
+                script {
+                    sh '''
+                        echo "Building Prometheus binaries..."
+                        
+                        # Ensure we're in the right directory
+                        cd /var/lib/jenkins/workspace/${JOB_NAME}
+                        
+                        # Set up Go environment again (for this stage)
+                        export PATH=/usr/local/go/bin:$PATH
+                        export GOROOT=/usr/local/go
+                        export GOPATH=/var/lib/jenkins/go
+                        
+                        # Download Go dependencies
+                        echo "Downloading Go dependencies..."
+                        go mod download
+                        
+                        # Build the Go binaries
+                        echo "Building Prometheus and Promtool..."
+                        make build
+                        
+                        # Verify binaries were created
+                        echo "Verifying build outputs..."
+                        if [ ! -f ".build/linux-amd64/prometheus" ]; then
+                            echo "ERROR: Prometheus binary not found after build"
+                            ls -la .build/linux-amd64/ || echo "Build directory not found"
+                            exit 1
+                        fi
+                        
+                        if [ ! -f ".build/linux-amd64/promtool" ]; then
+                            echo "ERROR: Promtool binary not found after build"
+                            ls -la .build/linux-amd64/ || echo "Build directory not found"
+                            exit 1
+                        fi
+                        
+                        echo "Binary build completed successfully"
+                        echo "Build outputs:"
+                        ls -la .build/linux-amd64/
+                        echo "Binary sizes:"
+                        du -h .build/linux-amd64/prometheus .build/linux-amd64/promtool
+                    '''
+                }
+            }
+        }
+        
         stage('Test Basic Commands') {
             steps {
                 script {
@@ -171,12 +217,18 @@ pipeline {
             }
         }
         
-        stage('Build Prometheus') {
+        stage('Build Prometheus Docker Image') {
             steps {
                 script {
                     sh '''
-                        # Build Prometheus Docker image
+                        # Build Prometheus Docker image using pre-built binaries
                         echo "Building Prometheus Docker image..."
+                        
+                        # Verify binaries exist before Docker build
+                        if [ ! -f ".build/linux-amd64/prometheus" ] || [ ! -f ".build/linux-amd64/promtool" ]; then
+                            echo "ERROR: Required binaries not found. Did the previous build stage complete successfully?"
+                            exit 1
+                        fi
                         
                         # Build with local registry tag
                         LOCAL_IMAGE="${DOCKER_REGISTRY}/${DOCKER_IMAGE}"
