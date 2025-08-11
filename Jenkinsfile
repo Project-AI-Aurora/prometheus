@@ -39,15 +39,23 @@ pipeline {
             }
         }
         
-        stage('Setup Environment') {
+                stage('Setup Environment') {
             steps {
                 script {
                     // Install Go if not present
                     sh '''
-                        # Check if Go is available in PATH
+                        # Check if Go is actually available and working
+                        GO_AVAILABLE=false
                         if command -v go &> /dev/null; then
-                            echo "Go is already available: $(go version)"
-                        else
+                            if go version &> /dev/null; then
+                                GO_AVAILABLE=true
+                                echo "Go is already available: $(go version)"
+                            else
+                                echo "Go command exists but doesn't work, will reinstall"
+                            fi
+                        fi
+                        
+                        if [ "$GO_AVAILABLE" = false ]; then
                             echo "Installing Go..."
                             # Use a recent Go version with fallback URLs
                             GO_VERSION="1.21.15"
@@ -67,20 +75,40 @@ pipeline {
                             fi
                             
                             sudo tar -C /usr/local -xzf "go${GO_VERSION}.${GO_ARCH}.tar.gz"
-                            export PATH=$PATH:/usr/local/go/bin
-                            # Verify installation
-                            /usr/local/go/bin/go version
-                            echo "Go installation completed successfully"
                             
-                                                    # Clean up downloaded archive
-                        rm -f "go${GO_VERSION}.${GO_ARCH}.tar.gz"
-                    fi
-                    
-                    # Ensure Go is in PATH for this session
-                    export PATH=$PATH:/usr/local/go/bin
-                    echo "Current Go version: $(go version)"
-                    
-                    # Install Docker if not present
+                            # Clean up downloaded archive
+                            rm -f "go${GO_VERSION}.${GO_ARCH}.tar.gz"
+                            
+                            echo "Go installation completed"
+                        fi
+                        
+                        # Always ensure Go is in PATH and verify it works
+                        export PATH=$PATH:/usr/local/go/bin
+                        echo "Updated PATH: $PATH"
+                        
+                        # Verify Go is working
+                        if /usr/local/go/bin/go version; then
+                            echo "Go verification successful: $(/usr/local/go/bin/go version)"
+                        else
+                            echo "Go verification failed"
+                            exit 1
+                        fi
+                        
+                        # Create Go workspace if it doesn't exist
+                        sudo mkdir -p /var/lib/jenkins/go
+                        sudo chown jenkins:jenkins /var/lib/jenkins/go
+                        
+                        # Export environment variables for this shell session
+                        export GOROOT=/usr/local/go
+                        export GOPATH=/var/lib/jenkins/go
+                        export PATH=/usr/local/go/bin:$PATH
+                        
+                        echo "Go environment setup complete:"
+                        echo "GOROOT: $GOROOT"
+                        echo "GOPATH: $GOPATH"
+                        echo "PATH: $PATH"
+                        
+                        # Install Docker if not present
                         if ! command -v docker &> /dev/null; then
                             echo "Installing Docker..."
                             curl -fsSL https://get.docker.com -o get-docker.sh
@@ -91,6 +119,8 @@ pipeline {
                         # Start Docker service
                         sudo systemctl start docker
                         sudo systemctl enable docker
+                        
+                        echo "Environment setup completed successfully"
                     '''
                 }
             }
