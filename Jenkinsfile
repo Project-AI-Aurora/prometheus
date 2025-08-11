@@ -50,11 +50,13 @@ pipeline {
                         # More robust Go detection
                         if command -v go &> /dev/null; then
                             # Check if it's actually executable and working
-                            if which go &> /dev/null && [ -x "$(which go)" ] && go version &> /dev/null 2>&1; then
+                            GO_BINARY=$(which go 2>/dev/null)
+                            if [ -n "$GO_BINARY" ] && [ -x "$GO_BINARY" ] && go version &> /dev/null 2>&1; then
                                 GO_AVAILABLE=true
                                 echo "Go is already available: $(go version)"
                             else
                                 echo "Go command exists but doesn't work, will reinstall"
+                                echo "GO_BINARY: $GO_BINARY"
                                 # Remove broken Go installation
                                 sudo rm -rf /usr/local/go
                                 sudo rm -f /usr/bin/go
@@ -85,15 +87,34 @@ pipeline {
                             fi
                             
                             # Install Go
+                            echo "Extracting Go to /usr/local..."
                             sudo tar -C /usr/local -xzf "go${GO_VERSION}.${GO_ARCH}.tar.gz"
+                            
+                            # Verify the installation directory exists
+                            if [ ! -d "/usr/local/go/bin" ]; then
+                                echo "Error: Go installation directory not found"
+                                ls -la /usr/local/
+                                exit 1
+                            fi
                             
                             # Create symlink for easier access
                             sudo ln -sf /usr/local/go/bin/go /usr/bin/go
+                            
+                            # Verify the binary is executable
+                            if [ -x "/usr/local/go/bin/go" ]; then
+                                echo "Go binary is executable"
+                            else
+                                echo "Error: Go binary is not executable"
+                                ls -la /usr/local/go/bin/go
+                                exit 1
+                            fi
                             
                             # Clean up downloaded archive
                             rm -f "go${GO_VERSION}.${GO_ARCH}.tar.gz"
                             
                             echo "Go installation completed"
+                            echo "Verifying installation directory:"
+                            ls -la /usr/local/go/bin/
                         fi
                         
                         # Always ensure Go is in PATH and verify it works
@@ -130,12 +151,23 @@ pipeline {
                             echo "Installing Docker..."
                             curl -fsSL https://get.docker.com -o get-docker.sh
                             sudo sh get-docker.sh
-                            sudo usermod -aG docker $USER
+                            sudo usermod -aG docker jenkins
                         fi
                         
                         # Start Docker service
                         sudo systemctl start docker
                         sudo systemctl enable docker
+                        
+                        # Ensure Jenkins user has Docker access
+                        sudo usermod -aG docker jenkins
+                        sudo chmod 666 /var/run/docker.sock || true
+                        
+                        # Test Docker access
+                        if docker --version &> /dev/null; then
+                            echo "Docker is accessible"
+                        else
+                            echo "Warning: Docker may not be accessible to Jenkins user"
+                        fi
                         
                         echo "Environment setup completed successfully"
                     '''
