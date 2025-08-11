@@ -4,7 +4,11 @@ pipeline {
     environment {
         GITHUB_TOKEN = credentials('github-token')
         DOCKER_IMAGE = 'prometheus:latest'
+        DOCKER_REGISTRY = 'localhost:5000'
         TEST_DIR = 'prometheus-integration-tests'
+        // Docker Hub credentials (optional - only needed if PUSH_TO_DOCKERHUB=true)
+        DOCKERHUB_USERNAME = credentials('dockerhub-username')
+        DOCKERHUB_PASSWORD = credentials('dockerhub-password')
     }
     
     stages {
@@ -175,18 +179,82 @@ pipeline {
             }
         }
         
+        stage('Setup Docker Registry') {
+            steps {
+                script {
+                    sh '''
+                        echo "Setting up local Docker registry..."
+                        
+                        # Check if registry container is already running
+                        if docker ps | grep -q "registry:2"; then
+                            echo "Docker registry is already running"
+                        else
+                            echo "Starting Docker registry..."
+                            # Stop any existing registry containers
+                            docker ps -q --filter "name=registry" | xargs -r docker stop
+                            docker ps -aq --filter "name=registry" | xargs -r docker rm
+                            
+                            # Start a new registry container
+                            docker run -d \
+                                --name registry \
+                                --restart=unless-stopped \
+                                -p 5000:5000 \
+                                -v /var/lib/jenkins/registry:/var/lib/registry \
+                                registry:2
+                            
+                            # Wait for registry to be ready
+                            echo "Waiting for registry to be ready..."
+                            sleep 10
+                            
+                            # Test registry connectivity
+                            if curl -s http://localhost:5000/v2/ > /dev/null; then
+                                echo "Docker registry is ready"
+                            else
+                                echo "Warning: Registry may not be fully ready yet"
+                            fi
+                        fi
+                        
+                        # Configure Docker to allow insecure registry
+                        if ! grep -q "insecure-registry" /etc/docker/daemon.json 2>/dev/null; then
+                            echo "Configuring Docker daemon for insecure registry..."
+                            sudo mkdir -p /etc/docker
+                            echo '{"insecure-registries": ["localhost:5000"]}' | sudo tee /etc/docker/daemon.json
+                            sudo systemctl restart docker
+                            sleep 5
+                        fi
+                        
+                        echo "Docker registry setup completed"
+                    '''
+                }
+            }
+        }
+        
         stage('Build Prometheus') {
             steps {
                 script {
                     sh '''
                         # Build Prometheus Docker image
                         echo "Building Prometheus Docker image..."
-                        docker build -t ${DOCKER_IMAGE} .
+                        
+                        # Build with local registry tag
+                        LOCAL_IMAGE="${DOCKER_REGISTRY}/${DOCKER_IMAGE}"
+                        docker build -t ${DOCKER_IMAGE} -t ${LOCAL_IMAGE} .
                         
                         if [ $? -ne 0 ]; then
                             echo "Failed to build Prometheus image"
                             exit 1
                         fi
+                        
+                        # Push to local registry
+                        echo "Pushing image to local registry..."
+                        docker push ${LOCAL_IMAGE}
+                        
+                        if [ $? -ne 0 ]; then
+                            echo "Failed to push to local registry"
+                            exit 1
+                        fi
+                        
+                        echo "Successfully built and pushed: ${LOCAL_IMAGE}"
                     '''
                 }
             }
@@ -262,16 +330,52 @@ pipeline {
                 }
             }
         }
+        
+        stage('Push to Docker Hub (Optional)') {
+            when {
+                environment name: 'PUSH_TO_DOCKERHUB', value: 'true'
+            }
+            steps {
+                script {
+                    sh '''
+                        echo "Pushing image to Docker Hub..."
+                        
+                        # Login to Docker Hub (requires credentials)
+                        echo $DOCKERHUB_PASSWORD | docker login -u $DOCKERHUB_USERNAME --password-stdin
+                        
+                        # Tag for Docker Hub
+                        DOCKERHUB_IMAGE="${DOCKERHUB_USERNAME}/prometheus:${BUILD_NUMBER}"
+                        docker tag ${DOCKER_IMAGE} ${DOCKERHUB_IMAGE}
+                        
+                        # Push to Docker Hub
+                        docker push ${DOCKERHUB_IMAGE}
+                        
+                        if [ $? -eq 0 ]; then
+                            echo "Successfully pushed to Docker Hub: ${DOCKERHUB_IMAGE}"
+                        else
+                            echo "Failed to push to Docker Hub"
+                            exit 1
+                        fi
+                    '''
+                }
+            }
+        }
     }
     
     post {
         always {
             script {
-                // Clean up Docker containers
+                // Clean up Docker containers and images
                 sh '''
-                    echo "Cleaning up Docker containers..."
+                    echo "Cleaning up Docker containers and images..."
                     docker ps -aq | xargs -r docker rm -f || true
+                    
+                    # Clean up local images
                     docker images -q ${DOCKER_IMAGE} | xargs -r docker rmi || true
+                    docker images -q ${DOCKER_REGISTRY}/${DOCKER_IMAGE} | xargs -r docker rmi || true
+                    
+                    # Keep registry running but clean up old images
+                    echo "Registry cleanup completed"
                 '''
                 
                 // Post results to GitHub PR if this is a PR build
