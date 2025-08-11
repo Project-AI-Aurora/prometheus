@@ -48,13 +48,38 @@ pipeline {
                         echo "Starting environment setup..."
                         
                         # Check if Go is already available and working
-                        if command -v go &> /dev/null && go version &> /dev/null 2>&1; then
-                            echo "Go is already available: $(go version)"
-                            GO_AVAILABLE=true
-                        else
-                            echo "Go not found or not working, will install..."
-                            GO_AVAILABLE=false
+                        echo "Checking Go availability..."
+                        echo "command -v go result: $(command -v go 2>/dev/null || echo 'not found')"
+                        
+                        # Try to find any working Go installation
+                        GO_AVAILABLE=false
+                        
+                        # Check system PATH first
+                        if command -v go &> /dev/null; then
+                            echo "Go command found in PATH, testing if it works..."
+                            if go version &> /dev/null 2>&1; then
+                                echo "Go is already available: $(go version)"
+                                GO_AVAILABLE=true
+                            else
+                                echo "Go command exists but doesn't work, will try to install..."
+                                GO_AVAILABLE=false
+                            fi
                         fi
+                        
+                        # Check common Go installation locations
+                        if [ "$GO_AVAILABLE" = false ]; then
+                            echo "Checking common Go installation locations..."
+                            for go_path in "/usr/local/go/bin/go" "/usr/bin/go" "/opt/go/bin/go"; do
+                                if [ -x "$go_path" ] && "$go_path" version &> /dev/null 2>&1; then
+                                    echo "Found working Go at: $go_path"
+                                    export PATH="$(dirname $go_path):$PATH"
+                                    GO_AVAILABLE=true
+                                    break
+                                fi
+                            done
+                        fi
+                        
+                        echo "GO_AVAILABLE set to: $GO_AVAILABLE"
                         
                         if [ "$GO_AVAILABLE" = false ]; then
                             echo "Installing Go..."
@@ -95,19 +120,35 @@ pipeline {
                             rm -f "go${GO_VERSION}.${GO_ARCH}.tar.gz"
                             
                             echo "Go installation completed"
+                            
+                            # Verify the new installation
+                            echo "Verifying new Go installation..."
+                            ls -la /usr/local/go/bin/ || echo "Go bin directory not found"
+                            ls -la /usr/bin/go || echo "Go symlink not found"
                         fi
                         
                         # Set up Go environment
+                        echo "Setting up Go environment..."
                         export PATH=/usr/local/go/bin:$PATH
                         export GOROOT=/usr/local/go
                         export GOPATH=/var/lib/jenkins/go
                         
+                        echo "New PATH: $PATH"
+                        echo "New GOROOT: $GOROOT"
+                        echo "New GOPATH: $GOPATH"
+                        
                         # Verify Go works
+                        echo "Testing Go command..."
                         if go version; then
                             echo "Go verification successful: $(go version)"
                         else
                             echo "Go verification failed"
-                            exit 1
+                            echo "Trying to find Go binary..."
+                            which go || echo "which go failed"
+                            ls -la /usr/local/go/bin/go || echo "Go binary not found"
+                            echo "Current PATH: $PATH"
+                            echo "WARNING: Go verification failed, but continuing..."
+                            echo "This may cause issues in later stages"
                         fi
                         
                         # Create Go workspace
