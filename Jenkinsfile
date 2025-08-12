@@ -1,14 +1,11 @@
 pipeline {
     agent any
     
-    tools {
-        go 'Go 1.21'
-    }
-    
     environment {
         GO111MODULE = 'on'
         GOPATH = '/tmp/go'
         GOCACHE = '/tmp/go-cache'
+        PATH = "/usr/local/go/bin:/usr/lib/go-1.21/bin:/usr/lib/go-1.17/bin:/usr/lib/go-1.11/bin:$PATH"
     }
     
     stages {
