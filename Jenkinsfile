@@ -6,6 +6,8 @@ pipeline {
         GOPATH = '/tmp/go'
         GOCACHE = '/tmp/go-cache'
         PATH = "/usr/local/go/bin:$PATH"
+        TIA_REPO = 'https://github.com/Project-AI-Aurora/TIA'
+        TIA_WORKSPACE = '/tmp/tia-build'
         TIA_BINARY = '/tmp/tia'
     }
     
@@ -42,15 +44,58 @@ pipeline {
                 sh '''
                     echo "🚀 Setting up TIA for intelligent test execution..."
                     
-                    # Try to copy TIA binary from the TIA repository
-                    if [ -f "/Users/samohan/Code/TIA/tia" ]; then
-                        echo "✅ Found local TIA binary, copying..."
-                        cp /Users/samohan/Code/TIA/tia $TIA_BINARY
-                        chmod +x $TIA_BINARY
-                        echo "✅ TIA setup completed successfully"
+                    # Clean up any existing TIA build
+                    rm -rf $TIA_WORKSPACE
+                    mkdir -p $TIA_WORKSPACE
+                    cd $TIA_WORKSPACE
+                    
+                    # Clone TIA repository
+                    echo "📥 Cloning TIA repository from $TIA_REPO..."
+                    git clone $TIA_REPO .
+                    
+                    if [ $? -eq 0 ]; then
+                        echo "✅ TIA repository cloned successfully"
+                        
+                        # Check if we have the right files
+                        if [ -f "cmd/main.go" ] || [ -f "cmd/tia/main.go" ]; then
+                            echo "✅ Found TIA source code"
+                        else
+                            echo "❌ TIA source code not found in expected location"
+                            exit 1
+                        fi
                     else
-                        echo "⚠️  Local TIA binary not found, will run full test suite"
-                        echo "💡 To enable TIA, ensure the TIA repository is available at /Users/samohan/Code/TIA"
+                        echo "❌ Failed to clone TIA repository"
+                        exit 1
+                    fi
+                '''
+            }
+        }
+        
+        stage('Build TIA Binary') {
+            steps {
+                sh '''
+                    echo "🔨 Building TIA binary..."
+                    cd $TIA_WORKSPACE
+                    
+                    # Try to build from cmd/main.go first
+                    if [ -f "cmd/main.go" ]; then
+                        echo "Building from cmd/main.go..."
+                        go build -o $TIA_BINARY ./cmd/main.go
+                    elif [ -f "cmd/tia/main.go" ]; then
+                        echo "Building from cmd/tia/main.go..."
+                        go build -o $TIA_BINARY ./cmd/tia/main.go
+                    else
+                        echo "❌ No main.go found in cmd directories"
+                        exit 1
+                    fi
+                    
+                    if [ $? -eq 0 ] && [ -f "$TIA_BINARY" ]; then
+                        echo "✅ TIA binary built successfully"
+                        chmod +x $TIA_BINARY
+                        $TIA_BINARY --help
+                    else
+                        echo "❌ Failed to build TIA binary"
+                        exit 1
                     fi
                 '''
             }
@@ -193,11 +238,24 @@ pipeline {
                     echo "Performance improvement: From ~1 hour to ~5-15 minutes" >> tia-report.txt
                     echo "" >> tia-report.txt
                     echo "Coverage data: Generated fresh for this repository" >> tia-report.txt
+                    echo "" >> tia-report.txt
+                    echo "TIA binary: Built from source at $TIA_REPO" >> tia-report.txt
                     
                     # Archive the TIA report
                     archiveArtifacts artifacts: 'tia-report.txt', fingerprint: true
                     
                     echo "📊 TIA Report generated and archived"
+                '''
+            }
+        }
+        
+        stage('Cleanup TIA Build') {
+            steps {
+                sh '''
+                    echo "🧹 Cleaning up TIA build artifacts..."
+                    rm -rf $TIA_WORKSPACE
+                    rm -f $TIA_BINARY
+                    echo "✅ TIA cleanup completed"
                 '''
             }
         }
@@ -214,6 +272,7 @@ pipeline {
                     echo '🚀 Only relevant tests were executed, saving significant time.'
                     echo '⏱️  Expected time savings: From ~1 hour to ~5-15 minutes'
                     echo '📊 Fresh coverage data was generated for this repository'
+                    echo '🔨 TIA binary was built from source and used for analysis'
                 } else {
                     echo '✅ Pipeline completed successfully with full test suite!'
                     echo '💡 Consider setting up TIA for faster test execution in PRs'
